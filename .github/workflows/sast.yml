@@ -28,24 +28,33 @@ jobs:
       - name: Initialise CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: javascript-typescript   # explicit extractor name
-          queries: security-extended
-          source-root: .                     # explicitly point at repo root
+          languages: javascript        # valid identifier; covers TS too
+          queries: security-extended   # broader ruleset than default
 
-      # ── NOTE: No autobuild step – it is not needed for JavaScript/  
-      #    TypeScript and was causing "no source detected" failures.   
+      # ── 3. Create SARIF output directory ───────────────────────────
+      - name: Create SARIF output directory
+        run: mkdir -p sarif-results
 
-      # ── 3. Run the analysis ────────────────────────────────────────
+      # ── 4. Run the analysis ────────────────────────────────────────
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:javascript-typescript"
-          output: sarif-results
+          category: "/language:javascript"
+          output: sarif-results        # directory must already exist
           upload: true
 
-      # ── 4. Block pipeline on any findings ──────────────────────────
+      # ── 5. Block pipeline on any findings ──────────────────────────
       - name: Block pipeline on findings
         run: |
           SARIF_FILE=$(ls sarif-results/*.sarif 2>/dev/null | head -n 1)
           if [ -z "$SARIF_FILE" ]; then
-            echo "No SARIF file found – treating
+            echo "No SARIF file found – treating as clean."
+            exit 0
+          fi
+          RESULT_COUNT=$(jq '[.runs[].results // [] | length] | add // 0' "$SARIF_FILE")
+          echo "CodeQL findings: $RESULT_COUNT"
+          if [ "$RESULT_COUNT" -gt 0 ]; then
+            echo "::error::SAST gate failed – $RESULT_COUNT vulnerabilit(y/ies) detected. Review the Security tab."
+            exit 1
+          fi
+          echo "No vulnerabilities found. Pipeline continues."
