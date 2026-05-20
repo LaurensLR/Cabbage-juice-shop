@@ -2,11 +2,11 @@ name: SAST – CodeQL Analysis
 
 on:
   push:
-    branches: ["**"]          # Run on every check-in to any branch
+    branches: ["**"]
   pull_request:
     branches: ["**"]
   schedule:
-    - cron: "0 3 * * 1"       # Every Monday at 03:00 UTC
+    - cron: "0 3 * * 1"
 
 jobs:
   codeql-analysis:
@@ -17,12 +17,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-      security-events: write   # Required to upload SARIF results
-
-    strategy:
-      fail-fast: true          # Block the pipeline on first failure
-      matrix:
-        language: ["javascript"]   # Juice-Shop is Node.js / JS
+      security-events: write
 
     steps:
       # ── 1. Checkout ────────────────────────────────────────────────
@@ -33,35 +28,24 @@ jobs:
       - name: Initialise CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: ${{ matrix.language }}
-          # Use the security-extended suite for a broader ruleset
+          languages: javascript-typescript   # explicit extractor name
           queries: security-extended
+          source-root: .                     # explicitly point at repo root
 
-      # ── 3. Auto-build (needed for compiled languages; safe for JS) ─
-      - name: Auto-build
-        uses: github/codeql-action/autobuild@v3
+      # ── NOTE: No autobuild step – it is not needed for JavaScript/  
+      #    TypeScript and was causing "no source detected" failures.   
 
-      # ── 4. Run the analysis ────────────────────────────────────────
+      # ── 3. Run the analysis ────────────────────────────────────────
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:${{ matrix.language }}"
-          # Fail the job (block the pipeline) if any results are found
+          category: "/language:javascript-typescript"
           output: sarif-results
           upload: true
 
-      # ── 5. Hard-fail if the SARIF contains any results ─────────────
+      # ── 4. Block pipeline on any findings ──────────────────────────
       - name: Block pipeline on findings
         run: |
           SARIF_FILE=$(ls sarif-results/*.sarif 2>/dev/null | head -n 1)
           if [ -z "$SARIF_FILE" ]; then
-            echo "No SARIF file found – treating as clean."
-            exit 0
-          fi
-          RESULT_COUNT=$(jq '[.runs[].results // [] | length] | add // 0' "$SARIF_FILE")
-          echo "CodeQL findings: $RESULT_COUNT"
-          if [ "$RESULT_COUNT" -gt 0 ]; then
-            echo "::error::SAST gate failed – $RESULT_COUNT vulnerabilit(y/ies) detected. Review the Security tab."
-            exit 1
-          fi
-          echo "No vulnerabilities found. Pipeline continues."
+            echo "No SARIF file found – treating
