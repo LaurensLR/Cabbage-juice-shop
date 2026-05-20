@@ -26,37 +26,37 @@ jobs:
         uses: actions/checkout@v4
 
       # ── 1b. Detect supported source ──────────────────────────────
-      - name: Detect JavaScript/TypeScript source
+      - name: Detect Ruby source
         id: detect_source
         run: |
-          if git ls-files '*.js' '*.jsx' '*.ts' '*.tsx' '*.mjs' '*.cjs' | grep -q .; then
-            echo "has_js_ts=true" >> "$GITHUB_OUTPUT"
+          if git ls-files '*.rb' | grep -q .; then
+            echo "has_ruby=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_js_ts=false" >> "$GITHUB_OUTPUT"
-            echo "No JavaScript/TypeScript source detected; skipping CodeQL scan."
+            echo "has_ruby=false" >> "$GITHUB_OUTPUT"
+            echo "No Ruby source detected; skipping CodeQL scan."
           fi
 
       # ── 2. Initialise CodeQL ───────────────────────────────────────
       - name: Initialise CodeQL
-        if: steps.detect_source.outputs.has_js_ts == 'true'
+        if: steps.detect_source.outputs.has_ruby == 'true'
         uses: github/codeql-action/init@v3
         with:
-          languages: javascript-typescript   # correct v3 extractor name
+          languages: ruby
           build-mode: none                   # skip build tracing; scan files directly
           queries: security-extended
 
       # ── 3. Run the analysis ────────────────────────────────────────
       - name: Perform CodeQL Analysis
-        if: steps.detect_source.outputs.has_js_ts == 'true'
+        if: steps.detect_source.outputs.has_ruby == 'true'
         uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:javascript-typescript"
+          category: "/language:ruby"
           output: sarif-results
           upload: true
 
       # ── 4. Block pipeline on any findings ──────────────────────────
       - name: Block pipeline on findings
-        if: steps.detect_source.outputs.has_js_ts == 'true'
+        if: steps.detect_source.outputs.has_ruby == 'true'
         run: |
           SARIF_FILE=$(ls sarif-results/*.sarif 2>/dev/null | head -n 1)
           if [ -z "$SARIF_FILE" ]; then
@@ -72,5 +72,5 @@ jobs:
           echo "No vulnerabilities found. Pipeline continues."
 
       - name: Skip SAST when no supported source is present
-        if: steps.detect_source.outputs.has_js_ts != 'true'
-        run: echo "CodeQL scan skipped because this repository does not contain JavaScript/TypeScript source files."
+        if: steps.detect_source.outputs.has_ruby != 'true'
+        run: echo "CodeQL scan skipped because this repository does not contain Ruby source files."
