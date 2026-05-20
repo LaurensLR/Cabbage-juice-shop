@@ -1,0 +1,67 @@
+name: SAST – CodeQL Analysis
+
+on:
+  push:
+    branches: ["**"]          # Run on every check-in to any branch
+  pull_request:
+    branches: ["**"]
+  schedule:
+    - cron: "0 3 * * 1"       # Every Monday at 03:00 UTC
+
+jobs:
+  codeql-analysis:
+    name: CodeQL SAST Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      actions: read
+      contents: read
+      security-events: write   # Required to upload SARIF results
+
+    strategy:
+      fail-fast: true          # Block the pipeline on first failure
+      matrix:
+        language: ["javascript"]   # Juice-Shop is Node.js / JS
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Initialise CodeQL ───────────────────────────────────────
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Use the security-extended suite for a broader ruleset
+          queries: security-extended
+
+      # ── 3. Auto-build (needed for compiled languages; safe for JS) ─
+      - name: Auto-build
+        uses: github/codeql-action/autobuild@v3
+
+      # ── 4. Run the analysis ────────────────────────────────────────
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+          # Fail the job (block the pipeline) if any results are found
+          output: sarif-results
+          upload: true
+
+      # ── 5. Hard-fail if the SARIF contains any results ─────────────
+      - name: Block pipeline on findings
+        run: |
+          SARIF_FILE=$(ls sarif-results/*.sarif 2>/dev/null | head -n 1)
+          if [ -z "$SARIF_FILE" ]; then
+            echo "No SARIF file found – treating as clean."
+            exit 0
+          fi
+          RESULT_COUNT=$(jq '[.runs[].results // [] | length] | add // 0' "$SARIF_FILE")
+          echo "CodeQL findings: $RESULT_COUNT"
+          if [ "$RESULT_COUNT" -gt 0 ]; then
+            echo "::error::SAST gate failed – $RESULT_COUNT vulnerabilit(y/ies) detected. Review the Security tab."
+            exit 1
+          fi
+          echo "No vulnerabilities found. Pipeline continues."
